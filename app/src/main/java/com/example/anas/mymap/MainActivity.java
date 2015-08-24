@@ -97,13 +97,15 @@ public class MainActivity extends AppCompatActivity implements LocationListener{
 
         map.setMyLocationEnabled(true);
 
-        //update location
         locationManager = (LocationManager)getSystemService(Context.LOCATION_SERVICE);
         locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 30000, 100, this);
+        updatePlaces();
+
     }
 
     //method to update user location
     private void updatePlaces(){
+
 
         Location lastLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
         //save the current latitude and longitude
@@ -133,7 +135,7 @@ public class MainActivity extends AppCompatActivity implements LocationListener{
                 "&radius=40000&sensor=true" +
                 "&types=gas_station"+
                 "&key="+BROWSER_KEY;
-
+        
         //execute query
         new GetPlaces().execute(placesSearchStr);
 
@@ -214,6 +216,10 @@ public class MainActivity extends AppCompatActivity implements LocationListener{
             try{
                 //create JSON object parse string returned from doInBackground
                 JSONObject resultObject = new JSONObject(result);
+
+                //String pageToken = resultObject.getString("next_page_token");
+                //Log.d("BENZINO", "Token : " + pageToken );
+
                 //get "results" Array from resultObject
                 JSONArray placesArray = resultObject.getJSONArray("results");
                 //array of marker options for each place
