@@ -26,10 +26,14 @@ import org.apache.http.StatusLine;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.DefaultHttpClient;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.List;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -56,7 +60,8 @@ public class MainActivity extends AppCompatActivity {
         map = ((SupportMapFragment)getSupportFragmentManager().findFragmentById(R.id.map)).getMap();
 
         placeMarkers = new Marker[MAX_PLACES];
-        
+
+        map.setMyLocationEnabled(true);
 
         userIcon = R.drawable.user_place;
         foodIcon = R.drawable.marker_teal;
@@ -74,13 +79,16 @@ public class MainActivity extends AppCompatActivity {
         double lng;
         LatLng lastLatLng;
 
-        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        locationManager = (LocationManager)getApplicationContext().getSystemService(LOCATION_SERVICE);
+
         //get the last location
-        Location lastLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+        Location lastLocation =  locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER);
 
         //save the current latitude and longitude
         lat  = lastLocation.getLatitude();
         lng = lastLocation.getLongitude();
+
+        Log.d("BENZINO", lat+" : "+lng);
 
         //wrap up in a LatLng object to put it on the marker
         lastLatLng  = new LatLng(lat, lng);
@@ -100,23 +108,39 @@ public class MainActivity extends AppCompatActivity {
         //Google places search query
         String placesSearchStr = "https://maps.googleapis.com/maps/api/place/nearbysearch/" +
                 "json?location="+lat+","+lng+
-                "&radius=1000&sensor=true" +
-                "&types=food|bar|store|museum|art_gallery"+
-                "&key=your_key_here";
+                "&radius=10000&sensor=true" +
+                "&types=food|bar|store|museum|art_gallery|stadium"+
+                "&key=AIzaSyD-RNcbWX7PCB6Cz85rD1XrsPIEFdgU5fQ";
 
-        GetPlaces getPlaces = new GetPlaces();
-        getPlaces.execute(placesSearchStr);
-        Log.d("BENZINO", getPlaces.toString());
+        new GetPlaces().execute(placesSearchStr);
 
+    }
+
+    public Location getLastKnownLocation() {
+        locationManager = (LocationManager)getApplicationContext().getSystemService(LOCATION_SERVICE);
+        List<String> providers = locationManager.getProviders(true);
+        Location bestLocation = null;
+        for (String provider : providers) {
+            Location l = locationManager.getLastKnownLocation(provider);
+            if (l == null) {
+                continue;
+            }
+            if (bestLocation == null || l.getAccuracy() < bestLocation.getAccuracy()) {
+                // Found best last known location: %s", l);
+                bestLocation = l;
+            }
+        }
+        return bestLocation;
     }
 
     //Async task classes to fetch the places
     private class GetPlaces extends AsyncTask<String, Void, String>{
+        StringBuilder placesBuilder;
 
         @Override
         protected String doInBackground(String... placesURL) {
             //fetch and get places data
-            StringBuilder placesBuilder = new StringBuilder();
+            placesBuilder = new StringBuilder();
 
             //process Search parameter string
             for(String placesSearchURL:placesURL){
@@ -152,7 +176,7 @@ public class MainActivity extends AppCompatActivity {
 
                 }
             }
-            Log.d("BENZINO", "NNNNNVVVV " +  placesBuilder.toString());
+            Log.d("BENZINO", ":: " + placesBuilder.toString());
             return placesBuilder.toString();
         }
 
@@ -160,7 +184,105 @@ public class MainActivity extends AppCompatActivity {
         protected void onPostExecute(String s) {
             super.onPostExecute(s);
 
+            String result = placesBuilder.toString();
+
+            //removing any existing markers
+            if(placeMarkers != null)
+                for(int i =0; i<placeMarkers.length; i++)
+                    if(placeMarkers[i] !=null)
+                        placeMarkers[i].remove();
+
+            try{
+                //parse JSON
+                JSONObject resultObject = new JSONObject(result);
+
+                //places contained in a JSON Array
+                JSONArray placesArray = resultObject.getJSONArray("results");
+
+                places = new MarkerOptions[placesArray.length()];
+
+                boolean missingValue = false;
+
+                LatLng placeLatLng = null;
+                String placeName = "";
+                String vicinity = "";
+                int currentIcon = otherIcon;
+
+                Log.d("BENZINO", "PLACES"+placesArray.length());
+                //loop through places
+                for(int i = 0; i < placesArray.length(); i++){
+                    try{
+                        //parse each place
+                        JSONObject placeObject = placesArray.getJSONObject(i);
+
+                        JSONObject loc = placeObject.getJSONObject("geometry").getJSONObject("location");
+
+                        placeLatLng = new LatLng(
+                                Double.valueOf(loc.getString("lat")),
+                                Double.valueOf(loc.getString("lng")));
+
+                        JSONArray types = placeObject.getJSONArray("types");
+                        Log.d("BENZINO", "FOOD");
+                        //loop through the type array
+                        for(int t = 0; t < types.length(); t++){
+                            String type = types.get(t).toString();
+
+                            //using particular icons for each location
+                            if(type.contains("food")){
+                                Log.d("BENZINO", "FOOD");
+                                currentIcon = foodIcon;
+                                break;
+                            }else if(type.contains("bar")){
+                                Log.d("BENZINO", "BAR");
+                                currentIcon = drinkIcon;
+                                break;
+                            }else if(type.contains("store")){
+                                Log.d("BENZINO", "STORE");
+                                currentIcon = shopIcon;
+                                break;
+                            }else if(type.contains("stadium")){
+                                Log.d("BENZINO", "STAD");
+                                currentIcon = shopIcon;
+                                break;
+                            }
+                        }
+
+                        //get vicinity data
+                        vicinity = placeObject.getString("vicinity");
+
+                        //place name
+                        placeName = placeObject.getString("name");
+
+
+                    }catch (JSONException ex){
+                        missingValue = true;
+                        ex.printStackTrace();
+                    }
+
+                    if(missingValue)
+                        places[i]=null;
+                    else
+                        places[i] = new MarkerOptions()
+                                .position(placeLatLng)
+                                .title(placeName)
+                                .icon(BitmapDescriptorFactory.fromResource(currentIcon))
+                                .snippet(vicinity);
+                }
+
+            }catch (Exception e){
+                Log.d("BENZINO", e.getMessage());
+
+            }
+            if(places!=null && placeMarkers!=null){
+                for(int p=0; p<places.length && p<placeMarkers.length; p++){
+                    //will be null if a value was missing
+                    if(places[p]!=null)
+                        placeMarkers[p]=map.addMarker(places[p]);
+                }
+            }
         }
+
+        //Log.d("BENZINO", "onPost");
     }
 
     @Override
