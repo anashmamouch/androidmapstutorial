@@ -6,7 +6,7 @@
         android:layout_height="match_parent"
         android:name="com.google.android.gms.maps.SupportMapFragment"
 
-        map:cameraZoom="14"
+        map:cameraZoom="3"
         />
 
 

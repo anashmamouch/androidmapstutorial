@@ -1,6 +1,8 @@
 package com.example.anas.mymap;
 
+import android.content.Context;
 import android.location.Location;
+import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.support.v4.app.Fragment;
@@ -31,205 +33,221 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.List;
 
+/**
+ * Anas 24/7/2015
+ *
+ * */
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements LocationListener{
 
+    //the map
     private GoogleMap map;
+
+    //location manager
     private LocationManager locationManager;
+
+    //user marker
     private Marker userMarker;
+
+    //markers for places of interest
     private Marker[] placeMarkers;
+
+    //max places you can display mostly set by google
     private final int MAX_PLACES = 20;
+
+    //marker options
     private MarkerOptions[] places;
 
-
-
+    //instance variables for Marker icon drawable
     private int userIcon;
     private int foodIcon;
     private int shopIcon;
     private int drinkIcon;
     private int otherIcon;
 
+    private boolean updateFinished = true;
+    private String SERVER_KEY = "AIzaSyBYWwUbgLnzlWG_VwEjc7OzymQ2vFiK_ho";
+    private String BROWSER_KEY = "AIzaSyCh-k2YCfbPnKYpK2aqMureow1OP4RFCpk";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        map = ((SupportMapFragment)getSupportFragmentManager().findFragmentById(R.id.map)).getMap();
-
-        placeMarkers = new Marker[MAX_PLACES];
-
-        map.setMyLocationEnabled(true);
-
+        //get drawable IDs
         userIcon = R.drawable.user_place;
         foodIcon = R.drawable.marker_teal;
         shopIcon = R.drawable.marker_yellow;
         drinkIcon = R.drawable.marker_purple;
         otherIcon = R.drawable.marker_orange;
 
-        updatePlaces();
+        //get the map
+        map = ((SupportMapFragment)getSupportFragmentManager().findFragmentById(R.id.map)).getMap();
 
+        //create the marker array
+        placeMarkers = new Marker[MAX_PLACES];
+
+        map.setMyLocationEnabled(true);
+
+        //update location
+        locationManager = (LocationManager)getSystemService(Context.LOCATION_SERVICE);
+        locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 30000, 100, this);
     }
 
     //method to update user location
     private void updatePlaces(){
-        double lat;
-        double lng;
-        LatLng lastLatLng;
 
-        locationManager = (LocationManager)getApplicationContext().getSystemService(LOCATION_SERVICE);
-
-        //get the last location
-        Location lastLocation =  locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER);
-
+        Location lastLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
         //save the current latitude and longitude
-        lat  = lastLocation.getLatitude();
-        lng = lastLocation.getLongitude();
-
-        Log.d("BENZINO", lat+" : "+lng);
+        double lat  = lastLocation.getLatitude();
+        double lng = lastLocation.getLongitude();
 
         //wrap up in a LatLng object to put it on the marker
-        lastLatLng  = new LatLng(lat, lng);
+        LatLng lastLatLng  = new LatLng(lat, lng);
 
-        if( userMarker !=null ) userMarker.remove();
+        //remove any existing markers
+        if( userMarker !=null )
+            userMarker.remove();
 
-        //add marker to the users location
+        //create and set markers properties
         userMarker = map.addMarker(new MarkerOptions()
                 .position(lastLatLng)
                 .title("You are here")
                 .icon(BitmapDescriptorFactory.fromResource(userIcon))
                 .snippet("Your last recorded position"));
 
-        //Animate the camera to zoom to the users position
-        map.animateCamera(CameraUpdateFactory.newLatLng(lastLatLng), 3000, null);
+        //animate the camera to zoom to the users position
+        map.animateCamera(CameraUpdateFactory.newLatLngZoom(lastLatLng, 9.0F), 1000, null);
 
-        //Google places search query
+        //build places search query string
         String placesSearchStr = "https://maps.googleapis.com/maps/api/place/nearbysearch/" +
                 "json?location="+lat+","+lng+
-                "&radius=10000&sensor=true" +
-                "&types=food|bar|store|museum|art_gallery|stadium"+
-                "&key=AIzaSyD-RNcbWX7PCB6Cz85rD1XrsPIEFdgU5fQ";
+                "&radius=40000&sensor=true" +
+                "&types=gas_station"+
+                "&key="+BROWSER_KEY;
 
+        //execute query
         new GetPlaces().execute(placesSearchStr);
 
-    }
-
-    public Location getLastKnownLocation() {
-        locationManager = (LocationManager)getApplicationContext().getSystemService(LOCATION_SERVICE);
-        List<String> providers = locationManager.getProviders(true);
-        Location bestLocation = null;
-        for (String provider : providers) {
-            Location l = locationManager.getLastKnownLocation(provider);
-            if (l == null) {
-                continue;
-            }
-            if (bestLocation == null || l.getAccuracy() < bestLocation.getAccuracy()) {
-                // Found best last known location: %s", l);
-                bestLocation = l;
-            }
-        }
-        return bestLocation;
     }
 
     //Async task classes to fetch the places
     private class GetPlaces extends AsyncTask<String, Void, String>{
 
-
         @Override
         protected String doInBackground(String... placesURL) {
             //fetch and get places data
+            updateFinished = false;
+
+            //build result as a string
             StringBuilder placesBuilder = new StringBuilder();
 
             //process Search parameter string
             for(String placesSearchURL:placesURL){
-                //execute search
-                HttpClient placesClient = new DefaultHttpClient();
 
+                //try to fetch the data
                 try{
-                    //try to fetch the data
-                    HttpGet placesGet = new HttpGet(placesSearchURL);
-                    //retrieve Http response
-                    HttpResponse placesResponse = placesClient.execute(placesGet);
-                    //Check if we have a positive response HTTP:200 ok
-                    StatusLine status = placesResponse.getStatusLine();
 
-                    if(status.getStatusCode() == 200){
-                        //retrieve the actual content of the response data
-                        HttpEntity placesEntity = placesResponse.getEntity();
-                        InputStream placesContent = placesEntity.getContent();
+                    URL requestUrl = new URL(placesSearchURL);
+                    HttpURLConnection connection = (HttpURLConnection)requestUrl.openConnection();
+                    connection.setRequestMethod("GET");
+                    connection.connect();
+                    int responseCode = connection.getResponseCode();
 
-                        //create a reader for this stream
-                        InputStreamReader placesInput = new InputStreamReader(placesContent);
+                    Log.d("BENZINO", "RESPONSE CODE : " + responseCode);
 
-                        BufferedReader placesReader = new BufferedReader(placesInput);
+                    //only keep going is the response is okay
+                    if(responseCode == HttpURLConnection.HTTP_OK){
 
-                        String line = placesReader.readLine();
+                        BufferedReader reader = null;
 
-                        while (line != null)
-                            placesBuilder.append(line);
+                        InputStream inputStream = connection.getInputStream();
 
+                        if(inputStream == null)
+                            return "";
 
+                        reader = new BufferedReader(new InputStreamReader(inputStream));
+                        //read a line at a time append to string builder
+                        String line ;
+                        while ((line= reader.readLine() )!= null)
+                            placesBuilder.append(line  + "\n");
+
+                        if (placesBuilder.length() == 0)
+                            return "";
+
+                        Log.d("BENZINO", "PLACES BUILDER : " + placesBuilder.toString());
+                    }else{
+
+                        Log.d("BENZINO", "Unsuccessful HTTP Response Code: " + responseCode);
                     }
-                }catch (Exception e){
-
+                }catch (MalformedURLException e) {
+                    Log.d("BENZINO", "Error processing Places API URL", e);
+                } catch (IOException e) {
+                    Log.d("BENZINO", "Error connecting to Places API", e);
                 }
             }
-            Log.d("BENZINO", ":: " + placesBuilder.toString());
             return placesBuilder.toString();
         }
 
+        //process data from the doInBackground method
         @Override
         protected void onPostExecute(String result) {
-
-
-            Log.d("BENZINO", "RESULT: "+ result);
-
+            //parse places data returned from doInBackground
             //removing any existing markers
-            if(placeMarkers != null)
-                for(int i =0; i<placeMarkers.length; i++)
-                    if(placeMarkers[i] !=null)
+            if(placeMarkers != null) {
+                for (int i = 0; i < placeMarkers.length; i++) {
+                    if (placeMarkers[i] != null){
                         placeMarkers[i].remove();
+                    }
+                }
+            }
+
 
             try{
-                //parse JSON
+                //create JSON object parse string returned from doInBackground
                 JSONObject resultObject = new JSONObject(result);
-                Log.d("BENZINO", "RESULT OBJECT : "+ resultObject.toString());
-
-                //places contained in a JSON Array
+                //get "results" Array from resultObject
                 JSONArray placesArray = resultObject.getJSONArray("results");
-                Log.d("BENZINO", "RESULT ARRAY : "+ placesArray.toString());
-
+                //array of marker options for each place
                 places = new MarkerOptions[placesArray.length()];
 
-                boolean missingValue = false;
-
-                LatLng placeLatLng = null;
-                String placeName = "";
-                String vicinity = "";
-                int currentIcon = otherIcon;
-
-                Log.d("BENZINO", "PLACES"+placesArray.length());
+                Log.d("BENZINO", "PLACES LENGHT : "+placesArray.length());
+                Log.d("BENZINO", "PLACES ARRAY : "+placesArray.toString());
                 //loop through places
                 for(int i = 0; i < placesArray.length(); i++){
+                    //parse each place
+                    //if any value is missing we wont show the marker
+                    boolean missingValue = false;
+
+                    LatLng placeLatLng = null;
+                    //String placeName = "";
+                    String placeName = "Station de gas";
+                    String vicinity = "";
+                    int currentIcon = otherIcon;
                     try{
-                        //parse each place
+                        //attempt to retrieve place data values
+                        missingValue = false;
+                        //get place at this index
                         JSONObject placeObject = placesArray.getJSONObject(i);
-
+                        //get location section
                         JSONObject loc = placeObject.getJSONObject("geometry").getJSONObject("location");
-
+                        //read lat lng
                         placeLatLng = new LatLng(
                                 Double.valueOf(loc.getString("lat")),
                                 Double.valueOf(loc.getString("lng")));
-
+                        //get types
                         JSONArray types = placeObject.getJSONArray("types");
-                        Log.d("BENZINO", "FOOD");
                         //loop through the type array
                         for(int t = 0; t < types.length(); t++){
                             String type = types.get(t).toString();
-
                             //using particular icons for each location
                             if(type.contains("food")){
                                 Log.d("BENZINO", "FOOD");
@@ -237,11 +255,12 @@ public class MainActivity extends AppCompatActivity {
                                 break;
                             }else if(type.contains("bar")){
                                 Log.d("BENZINO", "BAR");
-                                currentIcon = drinkIcon;
+                                currentIcon = otherIcon;
                                 break;
-                            }else if(type.contains("store")){
-                                Log.d("BENZINO", "STORE");
-                                currentIcon = shopIcon;
+                            }else if(type.contains("gas_station")){
+                                Log.d("BENZINO", "GAS");
+                                Log.d("GAS", "PLACE GAS : " + placeObject.toString());
+                                currentIcon = drinkIcon;
                                 break;
                             }else if(type.contains("stadium")){
                                 Log.d("BENZINO", "STAD");
@@ -249,19 +268,25 @@ public class MainActivity extends AppCompatActivity {
                                 break;
                             }
                         }
-
                         //get vicinity data
                         vicinity = placeObject.getString("vicinity");
-
                         //place name
                         placeName = placeObject.getString("name");
 
-
                     }catch (JSONException ex){
+                        Log.d("BENZINO", "missing value");
                         missingValue = true;
                         ex.printStackTrace();
                     }
+                    //Show marker
+                    places[i] = new MarkerOptions()
+                            .position(placeLatLng)
+                            .title(placeName)
+                            .icon(BitmapDescriptorFactory.fromResource(currentIcon))
+                            .snippet(vicinity)
+                            ;
 
+                    /**
                     if(missingValue)
                         places[i]=null;
                     else
@@ -270,6 +295,7 @@ public class MainActivity extends AppCompatActivity {
                                 .title(placeName)
                                 .icon(BitmapDescriptorFactory.fromResource(currentIcon))
                                 .snippet(vicinity);
+                     **/
                 }
 
             }catch (Exception e){
@@ -288,6 +314,44 @@ public class MainActivity extends AppCompatActivity {
 
         //Log.d("BENZINO", "onPost");
     }
+
+    @Override
+    public void onLocationChanged(Location location) {
+        Log.d("BENZINO", "Location Changed");
+        updatePlaces();
+    }
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+        Log.d("BENZINO", "Status Changed");
+    }
+
+    @Override
+    public void onProviderEnabled(String provider) {
+        Log.d("BENZINO", "Provider Enabled");
+    }
+
+    @Override
+    public void onProviderDisabled(String provider) {
+        Log.d("BENZINO", "Provider Disabled");
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if(map!=null){
+            locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 30000, 100, this);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if(map!=null){
+            locationManager.removeUpdates(this);
+        }
+    }
+
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
