@@ -46,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
     private MarkerOptions[] places;
 
 
+
     private int userIcon;
     private int foodIcon;
     private int shopIcon;
@@ -135,12 +136,12 @@ public class MainActivity extends AppCompatActivity {
 
     //Async task classes to fetch the places
     private class GetPlaces extends AsyncTask<String, Void, String>{
-        StringBuilder placesBuilder;
+
 
         @Override
         protected String doInBackground(String... placesURL) {
             //fetch and get places data
-            placesBuilder = new StringBuilder();
+            StringBuilder placesBuilder = new StringBuilder();
 
             //process Search parameter string
             for(String placesSearchURL:placesURL){
@@ -181,10 +182,10 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @Override
-        protected void onPostExecute(String s) {
-            super.onPostExecute(s);
+        protected void onPostExecute(String result) {
 
-            String result = placesBuilder.toString();
+
+            Log.d("BENZINO", "RESULT: "+ result);
 
             //removing any existing markers
             if(placeMarkers != null)
@@ -195,9 +196,11 @@ public class MainActivity extends AppCompatActivity {
             try{
                 //parse JSON
                 JSONObject resultObject = new JSONObject(result);
+                Log.d("BENZINO", "RESULT OBJECT : "+ resultObject.toString());
 
                 //places contained in a JSON Array
                 JSONArray placesArray = resultObject.getJSONArray("results");
+                Log.d("BENZINO", "RESULT ARRAY : "+ placesArray.toString());
 
                 places = new MarkerOptions[placesArray.length()];
 
@@ -270,6 +273,7 @@ public class MainActivity extends AppCompatActivity {
                 }
 
             }catch (Exception e){
+                e.printStackTrace();
                 Log.d("BENZINO", e.getMessage());
 
             }
